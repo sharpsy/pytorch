@@ -6490,6 +6490,24 @@ a")
         self.checkScript(func, inputs_true, optimize=True)
         self.checkScript(func, inputs_false, optimize=True)
 
+    def test_ternary_module_type_hint(self):
+        class M1(torch.nn.Module):
+            def forward(self) -> Any:
+                return 'out' if self.training else {}
+
+        class M2(torch.nn.Module):
+            def forward(self) -> Any:
+                out: Any = 'out' if self.training else {}
+                return out
+
+        class M3(torch.nn.Module):
+            def forward(self) -> Optional[int]:
+                return None if self.training else 1
+
+        self.checkModule(M1(), ())
+        self.checkModule(M2(), ())
+        self.checkModule(M3(), ())
+
     def test_print(self):
         def func(x, y):
             q = (x + y).sigmoid()
