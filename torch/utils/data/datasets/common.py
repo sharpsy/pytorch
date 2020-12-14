@@ -1,8 +1,10 @@
 import os
+import sys
 import fnmatch
 import warnings
 import tarfile
-from typing import List, Union, Iterable, Any
+import zipfile
+from typing import List, Union, Iterable, Any, Callable
 from io import BufferedIOBase
 
 
@@ -67,6 +69,19 @@ def validate_pathname_binary(rec):
     return ""
 
 
+def extract_files_from_pathname_binaries(pathname_binaries : Iterable, extract_fn : Callable):
+    if not isinstance(pathname_binaries, Iterable):
+        warnings.warn("pathname_binaries must be Iterable type got {}".format(type(pathname_binaries)))
+        raise TypeError
+
+    for rec in pathname_binaries:
+        ret = validate_pathname_binary(rec)
+        if ret:
+            warnings.warn("encounter invalid pathname and binary record ({}), abort!".format(ret))
+            raise TypeError
+        yield from extract_fn(rec[0], rec[1])
+
+
 def extract_files_from_single_tar_pathname_binary(
         pathname : str,
         binary_stream : Any):
@@ -89,16 +104,19 @@ def extract_files_from_single_tar_pathname_binary(
         raise e
 
 
-def extract_files_from_tar_pathname_binaries(pathname_binaries : Iterable):
-    if not isinstance(pathname_binaries, Iterable):
-        warnings.warn("pathname_binaries must be Iterable type got {}".format(type(pathname_binaries)))
-        raise TypeError
+def extract_files_from_single_zip_pathname_binary(
+        pathname : str,
+        binary_stream : Any):
 
-    for rec in pathname_binaries:
-        ret = validate_pathname_binary(rec)
+    try:
+        with zipfile.ZipFile(binary_stream) as zips:
+            for zipinfo in zips.infolist():
+                # major version should always be 3 here.
+                if (sys.version_info[1] < 6 and zipinfo.filename.endswith('/')) or zipinfo.is_dir():
+                    continue
 
-        if ret:
-            warnings.warn("encounter invalid pathname and binary record ({}), abort!".format(ret))
-            raise TypeError
-
-        yield from extract_files_from_single_tar_pathname_binary(rec[0], rec[1])
+                inner_pathname = os.path.normpath(os.path.join(pathname, zipinfo.filename))
+                yield (inner_pathname, zips.open(zipinfo))
+    except zipfile.BadZipFile as e:
+        warnings.warn("Unable to extract files from corrupted zipfile stream {}, abort!".format(pathname))
+        raise e
